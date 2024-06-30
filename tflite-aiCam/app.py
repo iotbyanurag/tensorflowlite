@@ -1,31 +1,19 @@
-from flask import Flask, render_template, Response
-import cv2
+from flask import Flask, render_template, Response, send_from_directory
 import logging
+import os
+from multiprocessing import Value
+from libraries.object_detection import gen_frames, recording_start_time, recording
 
 app = Flask(__name__)
 
 # Enable logging
 logging.basicConfig(level=logging.DEBUG)
 
-# Generator function to stream video frames
-def gen_frames():
-    video_path = 'rtsp://localhost:8554/cam1'
-    cap = cv2.VideoCapture(video_path)
+# Path for recordings
+RECORDINGS_DIR = os.path.join(os.path.dirname(__file__), '../recordings')
 
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            logging.warning("Failed to grab frame")
-            break
-
-        # Encode frame to JPEG
-        ret, buffer = cv2.imencode('.jpg', frame)
-        frame = buffer.tobytes()
-
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-
-    cap.release()
+# Create the recordings directory if it doesn't exist
+os.makedirs(RECORDINGS_DIR, exist_ok=True)
 
 @app.route('/')
 def index():
@@ -34,6 +22,16 @@ def index():
 @app.route('/video_feed')
 def video_feed():
     return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/recordings')
+def list_recordings():
+    files = os.listdir(RECORDINGS_DIR)
+    files = [f for f in files if f.endswith('.mp4')]
+    return render_template('recordings.html', files=files)
+
+@app.route('/recordings/<filename>')
+def get_recording(filename):
+    return send_from_directory(RECORDINGS_DIR, filename)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

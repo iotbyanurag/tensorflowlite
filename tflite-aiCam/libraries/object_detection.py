@@ -9,7 +9,7 @@ import os
 # Enable logging
 logging.basicConfig(level=logging.DEBUG)
 
-# Define the absolute paths
+# Define the paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, '../modelResources/ssd_mobilenet_v2_coco_quant_postprocess.tflite')
 LABEL_MAP_PATH = os.path.join(BASE_DIR, '../modelResources/labelmap.txt')
@@ -36,7 +36,7 @@ recording = multiprocessing.Value('b', False)
 recording_start_time = multiprocessing.Value('d', 0.0)
 
 # Function to perform object detection on a frame
-def detect_objects(frame, recording, recording_start_time):
+def detect_objects(frame):
     height, width, _ = frame.shape
     input_shape = input_details[0]['shape']
     image_resized = cv2.resize(frame, (input_shape[1], input_shape[2]))
@@ -97,10 +97,9 @@ def record_clip(initial_frame):
     with recording.get_lock():
         recording.value = False
 
-def main():
+def gen_frames():
     video_path = 'rtsp://localhost:8554/cam1'
     cap = cv2.VideoCapture(video_path)
-    
     frame_skip = 5  # Process every 5th frame
     frame_counter = 0
 
@@ -108,15 +107,18 @@ def main():
         ret, frame = cap.read()
         if not ret:
             logging.warning("Failed to grab frame")
-            time.sleep(0.1)
-            continue
+            break
 
         frame_counter += 1
         if frame_counter % frame_skip == 0:
             # Perform object detection on the frame
-            frame = detect_objects(frame, recording, recording_start_time)
+            frame = detect_objects(frame)
+
+        # Encode frame to JPEG
+        ret, buffer = cv2.imencode('.jpg', frame)
+        frame = buffer.tobytes()
+
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
     cap.release()
-
-if __name__ == '__main__':
-    main()
