@@ -10,10 +10,12 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
 
 # Path for recordings
-RECORDINGS_DIR = os.path.join(os.path.dirname(__file__), '../recordings')
+RECORDINGS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'recordings'))
 
 # Create the recordings directory if it doesn't exist
 os.makedirs(RECORDINGS_DIR, exist_ok=True)
+
+logging.debug(f"Recordings directory: {RECORDINGS_DIR}")
 
 @app.route('/')
 def index():
@@ -26,8 +28,28 @@ def video_feed():
 @app.route('/recordings')
 def list_recordings():
     files = os.listdir(RECORDINGS_DIR)
+    logging.debug(f"Files in recordings directory: {files}")
     files = [f for f in files if f.endswith('.mp4')]
-    return render_template('recordings.html', files=files)
+
+    # Prepare file details for the template
+    file_details = []
+    for file in files:
+        parts = file.replace('.mp4', '').split('_')
+        logging.debug(f"Processing file: {file}, parts: {parts}")
+        if len(parts) == 3:
+            file_date = parts[1]
+            file_time = parts[2]
+        else:
+            file_date = 'Unknown Date'
+            file_time = 'Unknown Time'
+        file_details.append({
+            'file': file,
+            'file_date': file_date,
+            'file_time': file_time,
+        })
+
+    logging.debug(f"File details: {file_details}")
+    return render_template('recordings.html', files=file_details)
 
 @app.route('/recordings/<filename>')
 def get_recording(filename):

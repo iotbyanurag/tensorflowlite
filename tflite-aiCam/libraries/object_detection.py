@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.DEBUG)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, '../modelResources/ssd_mobilenet_v2_coco_quant_postprocess.tflite')
 LABEL_MAP_PATH = os.path.join(BASE_DIR, '../modelResources/labelmap.txt')
-RECORDINGS_DIR = os.path.join(BASE_DIR, '../../recordings')
+RECORDINGS_DIR = os.path.join(BASE_DIR, '../recordings')
 
 # Create the recordings directory if it doesn't exist
 os.makedirs(RECORDINGS_DIR, exist_ok=True)
@@ -64,18 +64,20 @@ def detect_objects(frame):
         with recording.get_lock():
             recording.value = True
             recording_start_time.value = time.time()
-        p = multiprocessing.Process(target=record_clip, args=(frame,))
+        p = multiprocessing.Process(target=record_clip, args=(frame, boxes, classes, scores))
         p.start()
 
     return frame
 
 # Function to record 15-second clip
-def record_clip(initial_frame):
+def record_clip(initial_frame, boxes, classes, scores):
     video_path = 'rtsp://localhost:8554/cam1'
     cap = cv2.VideoCapture(video_path)
     
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    output_file = os.path.join(RECORDINGS_DIR, f'person_detected_{int(time.time())}.mp4')
+    timestamp = int(time.time())
+    output_file = os.path.join(RECORDINGS_DIR, f'person_detected_{timestamp}.mp4')
+    thumbnail_file = os.path.join(RECORDINGS_DIR, f'person_detected_{timestamp}.jpg')
     out = cv2.VideoWriter(output_file, fourcc, 20.0, (initial_frame.shape[1], initial_frame.shape[0]))
     
     start_time = time.time()
@@ -86,13 +88,24 @@ def record_clip(initial_frame):
             break
 
         # Add timestamp overlay
-        timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-        cv2.putText(frame, timestamp, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        cv2.putText(frame, ts, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
         out.write(frame)
 
     cap.release()
     out.release()
+
+    # Create and save thumbnail with bounding boxes
+    thumbnail = initial_frame.copy()
+    for i in range(len(scores)):
+        if scores[i] > 0.5 and int(classes[i]) == 0:
+            ymin, xmin, ymax, xmax = boxes[i]
+            (left, right, top, bottom) = (int(xmin * initial_frame.shape[1]), int(xmax * initial_frame.shape[1]), int(ymin * initial_frame.shape[0]), int(ymax * initial_frame.shape[0]))
+            cv2.rectangle(thumbnail, (left, top), (right, bottom), (0, 255, 0), 2)
+            label = f"Person: {int(scores[i] * 100)}%"
+            cv2.putText(thumbnail, label, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+    cv2.imwrite(thumbnail_file, thumbnail)
 
     with recording.get_lock():
         recording.value = False
